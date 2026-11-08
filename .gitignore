@@ -1,0 +1,15 @@
+config.py
+config.pybb
+config.pyt
+jarvis_memory.json
+*.backup
+*.before-*
+*.keystore
+*.jks
+__pycache__/
+*.pyc
+.env
+.env.*
+*-backup
+*.memory-backup
+owner.json
