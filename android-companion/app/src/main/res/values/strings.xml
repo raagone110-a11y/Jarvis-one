@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">JARVIS Companion</string>
+    <string name="accessibility_description">JARVIS Companion receives basic interface events. It does not read screen text or perform taps.</string>
+</resources>
