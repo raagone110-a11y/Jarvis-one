@@ -22,6 +22,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import android.Manifest
+import android.content.pm.PackageManager
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 
 class MainActivity : Activity() {
 
@@ -30,6 +37,8 @@ class MainActivity : Activity() {
     private lateinit var chatText: TextView
     private lateinit var scroll: ScrollView
     private lateinit var input: EditText
+    private var tts: TextToSpeech? = null
+    private var recognizer: SpeechRecognizer? = null
 
     private val systemPrompt =
         "You are JARVIS, a personal AI assistant. Speak naturally in Hindi or Hinglish. " +
@@ -38,6 +47,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        tts = TextToSpeech(this) {
+            if (it == TextToSpeech.SUCCESS) tts?.language = Locale("hi", "IN")
+        }
         val key = getSharedPreferences("jarvis", Context.MODE_PRIVATE).getString("api_key", "")
         if (key.isNullOrEmpty()) showKeyScreen() else showChatScreen()
     }
@@ -102,6 +114,11 @@ class MainActivity : Activity() {
             setOnClickListener { onSend() }
         }
         row.addView(input, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val mic = Button(this).apply {
+            text = "🎤"
+            setOnClickListener { startListening() }
+        }
+        row.addView(mic)
         row.addView(send)
 
         root.addView(title)
@@ -113,6 +130,9 @@ class MainActivity : Activity() {
     }
 
     private fun append(who: String, msg: String) {
+        if (who == "JARVIS" && !msg.startsWith("Error")) {
+            tts?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
+        }
         runOnUiThread {
             chatText.append("$who: $msg\n\n")
             scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
@@ -209,5 +229,52 @@ class MainActivity : Activity() {
                 append("JARVIS", "Error: ${e.message}")
             }
         }.start()
+    }
+
+    private fun startListening() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            append("JARVIS", "Is phone me speech recognition available nahi hai.")
+            return
+        }
+        tts?.stop()
+        recognizer?.destroy()
+        recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        recognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onResults(results: Bundle?) {
+                val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                if (!t.isNullOrEmpty()) { input.setText(t); onSend() }
+            }
+            override fun onError(error: Int) {
+                input.hint = "Kuch likho..."
+                append("JARVIS", "Sun nahi paya (error $error). Dobara try karo.")
+            }
+            override fun onReadyForSpeech(p: Bundle?) { input.hint = "Sun raha hoon..." }
+            override fun onEndOfSpeech() { input.hint = "Kuch likho..." }
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+        }
+        recognizer?.startListening(i)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startListening()
+    }
+
+    override fun onDestroy() {
+        tts?.shutdown()
+        recognizer?.destroy()
+        super.onDestroy()
     }
 }
