@@ -6,6 +6,7 @@ import urllib.request
 import urllib.error
 from config import GEMINI_API_KEY
 from listen import listen
+from core.action_engine import ActionEngine
 
 MODEL = "gemini-3.5-flash-lite"
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
@@ -51,6 +52,7 @@ Never claim that you know personal information unless it is in the profile or co
 """
 
 MEMORY_FILE = "jarvis_memory.json"
+engine = ActionEngine()
 
 try:
     with open(MEMORY_FILE, "r", encoding="utf-8") as f:
@@ -79,6 +81,21 @@ while True:
         break
 
     if not user_input:
+        continue
+
+    plan = engine.plan(user_input)
+    if plan:
+        if "error" in plan:
+            print("JARVIS:", plan["error"])
+            continue
+        result = engine.execute(plan)
+        if result.get("requires_confirmation"):
+            if input(f"Allow {plan['action']}? (y/n): ").strip().lower() == "y":
+                result = engine.execute(plan, approved=True)
+            else:
+                print("JARVIS: Cancel kiya.")
+                continue
+        print("JARVIS:", result)
         continue
 
     extra = ""
