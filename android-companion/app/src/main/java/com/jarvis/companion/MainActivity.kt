@@ -29,6 +29,9 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import java.util.Locale
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
 
 class MainActivity : Activity() {
 
@@ -42,8 +45,14 @@ class MainActivity : Activity() {
 
     private val systemPrompt =
         "You are JARVIS, a personal AI assistant. Speak naturally in Hindi or Hinglish. " +
-        "Be polite, friendly and concise. Never claim to control the phone. " +
-        "The app itself handles only battery status and vibration."
+        "Be polite, friendly and concise. " +
+        "When the user asks you to do something on the phone, reply with ONLY one JSON object and nothing else. " +
+        "Allowed actions: " +
+        "{\"action\":\"open_app\",\"app\":\"<app name in English as shown on the phone, e.g. YouTube>\"} , " +
+        "{\"action\":\"flashlight\",\"state\":\"on\" or \"off\"} , " +
+        "{\"action\":\"volume\",\"direction\":\"up\" or \"down\",\"steps\":2}. " +
+        "For any other phone action, say politely in plain text that you cannot do it yet. " +
+        "For normal conversation reply in plain text, never JSON."
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -223,7 +232,8 @@ class MainActivity : Activity() {
                     history.remove(0)
                     history.remove(0)
                 }
-                append("JARVIS", answer)
+                val act = extractJson(answer)
+                if (act != null) runOnUiThread { handleAction(act) } else append("JARVIS", answer)
             } catch (e: Exception) {
                 if (history.length() > 0) history.remove(history.length() - 1)
                 append("JARVIS", "Error: ${e.message}")
@@ -250,7 +260,7 @@ class MainActivity : Activity() {
             }
             override fun onError(error: Int) {
                 input.hint = "Kuch likho..."
-                append("JARVIS", "Sun nahi paya (error $error). Dobara try karo.")
+                if (error != 11 && error != 5) append("JARVIS", "Sun nahi paya (error $error). Dobara try karo.")
             }
             override fun onReadyForSpeech(p: Bundle?) { input.hint = "Sun raha hoon..." }
             override fun onEndOfSpeech() { input.hint = "Kuch likho..." }
@@ -276,5 +286,91 @@ class MainActivity : Activity() {
         tts?.shutdown()
         recognizer?.destroy()
         super.onDestroy()
+    }
+
+    private fun extractJson(s: String): JSONObject? {
+        val a = s.indexOf('{')
+        val b = s.lastIndexOf('}')
+        if (a < 0 || b <= a) return null
+        return try {
+            JSONObject(s.substring(a, b + 1)).takeIf { it.has("action") }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun handleAction(a: JSONObject) {
+        val desc: String
+        val doIt: () -> String
+        when (a.optString("action")) {
+            "open_app" -> {
+                val name = a.optString("app").trim()
+                desc = "App kholna hai: $name?"
+                doIt = { openApp(name) }
+            }
+            "flashlight" -> {
+                val on = a.optString("state").lowercase() != "off"
+                desc = if (on) "Flashlight on karni hai?" else "Flashlight off karni hai?"
+                doIt = { setFlashlight(on) }
+            }
+            "volume" -> {
+                val up = a.optString("direction").lowercase() != "down"
+                val steps = a.optInt("steps", 2).coerceIn(1, 5)
+                desc = if (up) "Volume badhana hai?" else "Volume kam karna hai?"
+                doIt = { changeVolume(up, steps) }
+            }
+            else -> {
+                append("JARVIS", "Ye kaam abhi allowed nahi hai.")
+                return
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Permission chahiye")
+            .setMessage(desc)
+            .setPositiveButton("Allow") { _, _ -> append("JARVIS", doIt()) }
+            .setNegativeButton("Cancel") { _, _ -> append("JARVIS", "Cancel kiya.") }
+            .show()
+    }
+
+    private fun openApp(name: String): String {
+        if (name.isEmpty()) return "App ka naam samajh nahi aaya."
+        val pm = packageManager
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = pm.queryIntentActivities(launcher, 0)
+        val q = name.lowercase()
+        val match = apps.firstOrNull { it.loadLabel(pm).toString().lowercase() == q }
+            ?: apps.firstOrNull { it.loadLabel(pm).toString().lowercase().contains(q) }
+            ?: return "$name naam ka app nahi mila."
+        val intent = pm.getLaunchIntentForPackage(match.activityInfo.packageName)
+            ?: return "$name khul nahi paya."
+        startActivity(intent)
+        return "$name khol diya."
+    }
+
+    private fun setFlashlight(on: Boolean): String {
+        return try {
+            val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val id = cm.cameraIdList.firstOrNull {
+                val c = cm.getCameraCharacteristics(it)
+                c.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true &&
+                    c.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            } ?: return "Is phone me flashlight nahi mili."
+            cm.setTorchMode(id, on)
+            if (on) "Flashlight on kar di." else "Flashlight off kar di."
+        } catch (e: Exception) {
+            "Flashlight nahi chal payi: ${e.message}"
+        }
+    }
+
+    private fun changeVolume(up: Boolean, steps: Int): String {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        repeat(steps) {
+            am.adjustStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+                if (it == steps - 1) AudioManager.FLAG_SHOW_UI else 0
+            )
+        }
+        return if (up) "Volume badha diya." else "Volume kam kar diya."
     }
 }
