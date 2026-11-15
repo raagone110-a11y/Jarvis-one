@@ -32,6 +32,9 @@ import java.util.Locale
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
+import android.net.Uri
+import android.provider.AlarmClock
+import android.provider.ContactsContract
 
 class MainActivity : Activity() {
 
@@ -51,6 +54,13 @@ class MainActivity : Activity() {
         "{\"action\":\"open_app\",\"app\":\"<app name in English as shown on the phone, e.g. YouTube>\"} , " +
         "{\"action\":\"flashlight\",\"state\":\"on\" or \"off\"} , " +
         "{\"action\":\"volume\",\"direction\":\"up\" or \"down\",\"steps\":2}. " +
+        "{\"action\":\"whatsapp_message\",\"contact\":\"<contact name>\",\"text\":\"<message text>\"} , " +
+        "{\"action\":\"call\",\"contact\":\"<contact name>\"} , " +
+        "{\"action\":\"alarm\",\"hour\":6,\"minute\":30,\"label\":\"<short label>\"} , " +
+        "{\"action\":\"timer\",\"seconds\":300}. " +
+        "Write contact names in English letters as they would be saved in a phone. " +
+        "Write the message text in the same language and style the user wanted. " +
+        "Any action JSON may include an optional note field: one short Hinglish sentence telling the user which part of the request you could NOT do (for example: you cannot press Send, read messages or tap buttons, the user must do that himself). " +
         "For any other phone action, say politely in plain text that you cannot do it yet. " +
         "For normal conversation reply in plain text, never JSON."
 
@@ -319,6 +329,45 @@ class MainActivity : Activity() {
                 desc = if (up) "Volume badhana hai?" else "Volume kam karna hai?"
                 doIt = { changeVolume(up, steps) }
             }
+            "whatsapp_message" -> {
+                val c = a.optString("contact").trim()
+                val t = a.optString("text").trim()
+                if (c.isEmpty() || t.isEmpty()) {
+                    append("JARVIS", "Kisko kya msg bhejna hai, ye samajh nahi aaya.")
+                    return
+                }
+                desc = "$c ko WhatsApp msg likhna hai?\n\n\"$t\"\n\n(Send tumhe khud dabana hoga)"
+                doIt = { withContact(c) { num -> sendWhatsApp(num, t) } }
+            }
+            "call" -> {
+                val c = a.optString("contact").trim()
+                if (c.isEmpty()) {
+                    append("JARVIS", "Kisko call karna hai, ye samajh nahi aaya.")
+                    return
+                }
+                desc = "$c ko call lagana hai?\n(Dialer khulega, Call tumhe dabana hoga)"
+                doIt = { withContact(c) { num -> dial(num) } }
+            }
+            "alarm" -> {
+                val h = a.optInt("hour", -1)
+                val mi = a.optInt("minute", 0)
+                if (h !in 0..23 || mi !in 0..59) {
+                    append("JARVIS", "Alarm ka time samajh nahi aaya.")
+                    return
+                }
+                val label = a.optString("label", "JARVIS")
+                desc = "Alarm lagana hai: %02d:%02d?".format(h, mi)
+                doIt = { setAlarm(h, mi, label) }
+            }
+            "timer" -> {
+                val s = a.optInt("seconds", 0)
+                if (s !in 1..86400) {
+                    append("JARVIS", "Timer ka time samajh nahi aaya.")
+                    return
+                }
+                desc = "Timer lagana hai: ${s / 60} min ${s % 60} sec?"
+                doIt = { setTimer(s) }
+            }
             else -> {
                 append("JARVIS", "Ye kaam abhi allowed nahi hai.")
                 return
@@ -327,7 +376,11 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Permission chahiye")
             .setMessage(desc)
-            .setPositiveButton("Allow") { _, _ -> append("JARVIS", doIt()) }
+            .setPositiveButton("Allow") { _, _ ->
+                val r = doIt()
+                val n = a.optString("note").trim()
+                append("JARVIS", if (n.isNotEmpty()) "$r $n" else r)
+            }
             .setNegativeButton("Cancel") { _, _ -> append("JARVIS", "Cancel kiya.") }
             .show()
     }
@@ -372,5 +425,113 @@ class MainActivity : Activity() {
             )
         }
         return if (up) "Volume badha diya." else "Volume kam kar diya."
+    }
+
+    private val skipWords = setOf("bhai", "bhaiya", "bhaiyya", "didi", "sir", "ji", "mam", "madam")
+
+    private fun findContacts(name: String): List<Pair<String, String>> {
+        val out = LinkedHashMap<String, Pair<String, String>>()
+        val words = listOf(name) + name.split(" ").filter { it.length >= 3 && it.lowercase() !in skipWords }
+        val P = ContactsContract.CommonDataKinds.Phone
+        for (w in words) {
+            val cur = contentResolver.query(
+                P.CONTENT_URI,
+                arrayOf(P.DISPLAY_NAME, P.NUMBER),
+                P.DISPLAY_NAME + " LIKE ?",
+                arrayOf("%$w%"),
+                null
+            )
+            cur?.use {
+                while (it.moveToNext()) {
+                    val raw = it.getString(1)
+                    if (raw != null) {
+                        val num = raw.filter { ch -> ch.isDigit() || ch == '+' }
+                        val key = num.filter { ch -> ch.isDigit() }.takeLast(10)
+                        if (key.isNotEmpty() && !out.containsKey(key)) {
+                            out[key] = Pair(it.getString(0) ?: "", num)
+                        }
+                    }
+                }
+            }
+            if (out.isNotEmpty()) break
+        }
+        return out.values.toList()
+    }
+
+    private fun withContact(name: String, done: (String) -> String): String {
+        if (name.isEmpty()) return "Contact ka naam samajh nahi aaya."
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 2)
+            return "Contacts ki permission do, phir wahi command dobara bolo."
+        }
+        val found = findContacts(name)
+        if (found.isEmpty()) return "\"$name\" naam ka contact nahi mila."
+        if (found.size == 1) return done(found[0].second)
+        val list = found.take(6)
+        AlertDialog.Builder(this)
+            .setTitle("Kaun sa contact?")
+            .setItems(list.map { "${it.first}  ${it.second}" }.toTypedArray()) { _, which ->
+                append("JARVIS", done(list[which].second))
+            }
+            .setNegativeButton("Cancel") { _, _ -> append("JARVIS", "Cancel kiya.") }
+            .show()
+        return "Kai contacts mile, ek chuno."
+    }
+
+    private fun waNumber(raw: String): String {
+        val plus = raw.trim().startsWith("+")
+        var d = raw.filter { it.isDigit() }
+        if (!plus) {
+            if (d.length == 11 && d.startsWith("0")) d = d.substring(1)
+            if (d.length == 10) d = "91$d"
+        }
+        return d
+    }
+
+    private fun sendWhatsApp(rawNumber: String, text: String): String {
+        val uri = Uri.parse("https://wa.me/" + waNumber(rawNumber) + "?text=" + Uri.encode(text))
+        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(pkg))
+                return "WhatsApp mein msg likh diya. Send tumhe dabana hai."
+            } catch (e: Exception) {
+            }
+        }
+        return "WhatsApp nahi khul paya."
+    }
+
+    private fun dial(num: String): String {
+        return try {
+            startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$num")))
+            "Dialer khol diya. Call tumhe dabana hai."
+        } catch (e: Exception) {
+            "Dialer nahi khul paya."
+        }
+    }
+
+    private fun setAlarm(h: Int, m: Int, label: String): String {
+        return try {
+            val i = Intent(AlarmClock.ACTION_SET_ALARM)
+                .putExtra(AlarmClock.EXTRA_HOUR, h)
+                .putExtra(AlarmClock.EXTRA_MINUTES, m)
+                .putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+            startActivity(i)
+            "Alarm laga diya: %02d:%02d".format(h, m)
+        } catch (e: Exception) {
+            "Alarm nahi lag paya: ${e.message}"
+        }
+    }
+
+    private fun setTimer(seconds: Int): String {
+        return try {
+            val i = Intent(AlarmClock.ACTION_SET_TIMER)
+                .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+            startActivity(i)
+            "Timer laga diya: ${seconds / 60} min ${seconds % 60} sec"
+        } catch (e: Exception) {
+            "Timer nahi lag paya: ${e.message}"
+        }
     }
 }
