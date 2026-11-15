@@ -69,6 +69,21 @@ print("Namaste! Main JARVIS hoon.")
 print("Ab Gemini AI se baat kar sakte ho.")
 print("Band karne ke liye bye likho.\n")
 
+def format_result(plan, result):
+    if not result.get("success"):
+        return "Kaam nahi ho paya: " + str(result.get("error", "unknown error"))
+    action = plan["action"]
+    if action == "get_battery":
+        b = result["output"]
+        charger = "charger nahi laga hai" if b.get("plugged") == "UNPLUGGED" else "charger laga hai"
+        return f"Battery {b.get('percentage')} percent hai, {charger}. Temperature {b.get('temperature')} degree hai."
+    if action == "vibrate":
+        return "Phone vibrate kar diya."
+    if action == "show_notification":
+        return "Notification bhej diya."
+    return "Ho gaya."
+
+
 while True:
     user_input = input("You (Enter=bolo, ya type karo): ").strip()
     if user_input == "":
@@ -95,7 +110,14 @@ while True:
             else:
                 print("JARVIS: Cancel kiya.")
                 continue
-        print("JARVIS:", result)
+        message = format_result(plan, result)
+        print("JARVIS:", message)
+        subprocess.run(
+            ["termux-tts-speak", "-l", "hi-IN", "-p", "0.75", "-r", "0.90", message],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False
+        )
         continue
 
     extra = ""
