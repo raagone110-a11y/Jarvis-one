@@ -432,12 +432,11 @@ class MainActivity : Activity() {
     private fun findContacts(name: String): List<Pair<String, String>> {
         val out = LinkedHashMap<String, Pair<String, String>>()
         val words = listOf(name) + name.split(" ").filter { it.length >= 3 && it.lowercase() !in skipWords }
-        val P = ContactsContract.CommonDataKinds.Phone
         for (w in words) {
             val cur = contentResolver.query(
-                P.CONTENT_URI,
-                arrayOf(P.DISPLAY_NAME, P.NUMBER),
-                P.DISPLAY_NAME + " LIKE ?",
+                android.net.Uri.parse("content://com.android.contacts/data/phones"),
+                arrayOf("display_name", "data1"),
+                "display_name" + " LIKE ?",
                 arrayOf("%$w%"),
                 null
             )
