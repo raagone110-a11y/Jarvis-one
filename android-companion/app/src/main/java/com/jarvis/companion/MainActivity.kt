@@ -34,7 +34,6 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
 import android.provider.AlarmClock
-import android.provider.ContactsContract
 
 class MainActivity : Activity() {
 
@@ -146,6 +145,14 @@ class MainActivity : Activity() {
         setContentView(root)
 
         append("JARVIS", "Namaste! Main JARVIS hoon. Battery status, vibrate phone, ya kuch bhi poochho.")
+
+        // Saari zaroori permissions ek hi baar me maango
+        val need = listOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.CALL_PHONE
+        ).filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), 3)
     }
 
     private fun append(who: String, msg: String) {
@@ -171,15 +178,8 @@ class MainActivity : Activity() {
         when {
             batteryWords.any { low.contains(it) } -> append("JARVIS", batteryText())
             vibrateWords.any { low.contains(it) } -> {
-                AlertDialog.Builder(this)
-                    .setTitle("Permission chahiye")
-                    .setMessage("Phone vibrate karna hai?")
-                    .setPositiveButton("Allow") { _, _ ->
-                        vibratePhone()
-                        append("JARVIS", "Phone vibrate kar diya.")
-                    }
-                    .setNegativeButton("Cancel") { _, _ -> append("JARVIS", "Cancel kiya.") }
-                    .show()
+                vibratePhone()
+                append("JARVIS", "Phone vibrate kar diya.")
             }
             else -> askGemini(text)
         }
@@ -309,24 +309,21 @@ class MainActivity : Activity() {
         }
     }
 
+    // Ab koi Allow dialog nahi: action seedha chalta hai
     private fun handleAction(a: JSONObject) {
-        val desc: String
         val doIt: () -> String
         when (a.optString("action")) {
             "open_app" -> {
                 val name = a.optString("app").trim()
-                desc = "App kholna hai: $name?"
                 doIt = { openApp(name) }
             }
             "flashlight" -> {
                 val on = a.optString("state").lowercase() != "off"
-                desc = if (on) "Flashlight on karni hai?" else "Flashlight off karni hai?"
                 doIt = { setFlashlight(on) }
             }
             "volume" -> {
                 val up = a.optString("direction").lowercase() != "down"
                 val steps = a.optInt("steps", 2).coerceIn(1, 5)
-                desc = if (up) "Volume badhana hai?" else "Volume kam karna hai?"
                 doIt = { changeVolume(up, steps) }
             }
             "whatsapp_message" -> {
@@ -336,7 +333,6 @@ class MainActivity : Activity() {
                     append("JARVIS", "Kisko kya msg bhejna hai, ye samajh nahi aaya.")
                     return
                 }
-                desc = "$c ko WhatsApp msg likhna hai?\n\n\"$t\"\n\n(Send tumhe khud dabana hoga)"
                 doIt = { withContact(c) { num -> sendWhatsApp(num, t) } }
             }
             "call" -> {
@@ -345,7 +341,6 @@ class MainActivity : Activity() {
                     append("JARVIS", "Kisko call karna hai, ye samajh nahi aaya.")
                     return
                 }
-                desc = "$c ko call lagana hai?\n(Dialer khulega, Call tumhe dabana hoga)"
                 doIt = { withContact(c) { num -> dial(num) } }
             }
             "alarm" -> {
@@ -356,7 +351,6 @@ class MainActivity : Activity() {
                     return
                 }
                 val label = a.optString("label", "JARVIS")
-                desc = "Alarm lagana hai: %02d:%02d?".format(h, mi)
                 doIt = { setAlarm(h, mi, label) }
             }
             "timer" -> {
@@ -365,7 +359,6 @@ class MainActivity : Activity() {
                     append("JARVIS", "Timer ka time samajh nahi aaya.")
                     return
                 }
-                desc = "Timer lagana hai: ${s / 60} min ${s % 60} sec?"
                 doIt = { setTimer(s) }
             }
             else -> {
@@ -373,16 +366,9 @@ class MainActivity : Activity() {
                 return
             }
         }
-        AlertDialog.Builder(this)
-            .setTitle("Permission chahiye")
-            .setMessage(desc)
-            .setPositiveButton("Allow") { _, _ ->
-                val r = doIt()
-                val n = a.optString("note").trim()
-                append("JARVIS", if (n.isNotEmpty()) "$r $n" else r)
-            }
-            .setNegativeButton("Cancel") { _, _ -> append("JARVIS", "Cancel kiya.") }
-            .show()
+        val r = doIt()
+        val n = a.optString("note").trim()
+        append("JARVIS", if (n.isNotEmpty()) "$r $n" else r)
     }
 
     private fun openApp(name: String): String {
@@ -499,12 +485,19 @@ class MainActivity : Activity() {
         return "WhatsApp nahi khul paya."
     }
 
+    // CALL_PHONE permission ho to seedha call lagta hai, warna dialer khulta hai
     private fun dial(num: String): String {
         return try {
-            startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$num")))
-            "Dialer khol diya. Call tumhe dabana hai."
+            if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$num")))
+                "Call laga diya."
+            } else {
+                requestPermissions(arrayOf(Manifest.permission.CALL_PHONE), 3)
+                startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$num")))
+                "Call ki permission nahi hai, dialer khol diya. Permission Allow karke dobara bolo."
+            }
         } catch (e: Exception) {
-            "Dialer nahi khul paya."
+            "Call nahi lag paya."
         }
     }
 
