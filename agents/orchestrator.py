@@ -1,13 +1,12 @@
 """
 Simple Orchestrator – routes tasks to the right agent(s).
-
-This is the beginning of multi-agent coordination for the YouTube CEO vision.
 """
 
 from typing import Any, Dict, Optional
 
 from .script_agent import ScriptAgent
 from .research_agent import ResearchAgent
+from .strategy_agent import StrategyAgent
 
 
 class Orchestrator:
@@ -16,6 +15,7 @@ class Orchestrator:
         self.agents = {
             "script": ScriptAgent(gemini_key),
             "research": ResearchAgent(gemini_key),
+            "strategy": StrategyAgent(gemini_key),
         }
 
     def run(self, agent_name: str, task: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -28,7 +28,6 @@ class Orchestrator:
         return agent.run(task, context)
 
     def research_then_script(self, niche: str) -> Dict[str, Any]:
-        """Example pipeline: research ideas → pick first → generate full script package."""
         research = self.run("research", niche, {"niche": niche})
         if not research.get("success"):
             return research
@@ -37,7 +36,6 @@ class Orchestrator:
         if not ideas:
             return {"success": False, "error": "No ideas returned from research"}
 
-        # Take the first idea for now
         first = ideas[0] if isinstance(ideas, list) else ideas
         title = first.get("title_idea") if isinstance(first, dict) else str(first)
 
