@@ -6,44 +6,41 @@
 
 ### Working Features
 - Android Companion App (Kotlin)
-  - Dark modern UI
+  - Dark modern UI + status indicators
   - Gemini chat + voice (STT/TTS)
   - Device actions: flashlight, volume, open app, WhatsApp, call, alarm, timer, battery, vibrate
   - Foreground Service + notification
+  - **Standard Mode only** (no Developer Options required)
 - Python core (Termux oriented)
-  - Gemini integration
-  - ActionEngine + AndroidCore (battery, vibrate, notification)
-  - Memory persistence
+  - Gemini integration + memory
+  - ActionEngine + AndroidCore
+- Modular Agents
+  - BaseAgent
+  - ScriptAgent (Hinglish scripts + titles + tags)
+  - ResearchAgent (idea generation)
+  - Simple Orchestrator (research → script pipeline)
 
 ### Completed
-- [x] Basic Android companion with dark UI + Foreground Service
-- [x] Modular agent folder structure created
-- [x] Base Agent class
-- [x] Script Agent skeleton (Hinglish script generation)
-- [x] ROADMAP + architecture docs
+- [x] Android dark UI + Foreground Service
+- [x] Standard vs Advanced Mode architecture documented
+- [x] Agent foundation + ScriptAgent + ResearchAgent
+- [x] Orchestrator with research→script example pipeline
+- [x] ROADMAP + ANDROID_MODES docs
 
-### In Progress
-- [ ] Full agent orchestration layer
-- [ ] Research Agent (trending topics, competitor analysis - free methods)
-- [ ] Strategy Agent
+### Next Priority
+1. Wire orchestrator into main jarvis.py loop (optional commands)
+2. Strategy Agent (simple content calendar)
+3. Shared memory / state for agents
+4. Accessibility Service exploration (still Standard Mode)
+5. Better error handling & logging across agents
 
-### Pending (Priority Order)
-1. Agent orchestrator + memory shared layer
-2. Research Agent (web search + Gemini analysis)
-3. Script Agent improvements (hooks, titles, descriptions, tags)
-4. Strategy Agent (content calendar)
-5. YouTube Analytics Agent (requires OAuth - later)
-6. Production / Publishing agents (approval gated)
-7. Learning loop
-
-## Architecture Principles
-- Modular agents under `agents/`
-- Reuse existing Gemini integration
-- Zero-budget first (free tools only)
-- Explicit approval for publishing / external irreversible actions
-- Preserve all existing working features
+### Later (Approval Gated)
+- YouTube Analytics (OAuth)
+- Publishing Agent
+- Full Learning loop
 
 ## Safety Rules
 - Never expose API keys
 - Never publish without explicit approval
 - No paid services without approval
+- Never auto-enable Developer Options
