@@ -3,4 +3,5 @@
     <string name="app_name">JARVIS</string>
     <string name="splash_title">JARVIS</string>
     <string name="splash_subtitle">Mor Pankh Edition</string>
+    <string name="accessibility_service_description">JARVIS optional advanced service. Allows deeper assistance when you explicitly enable it. You can turn it off anytime from Accessibility settings.</string>
 </resources>
