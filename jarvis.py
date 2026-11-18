@@ -8,7 +8,13 @@ from config import GEMINI_API_KEY
 from listen import listen
 from core.action_engine import ActionEngine
 
-MODEL = "gemini-3.5-flash-lite"
+try:
+    from agents.orchestrator import Orchestrator
+    orchestrator = Orchestrator(GEMINI_API_KEY)
+except Exception:
+    orchestrator = None
+
+MODEL = "gemini-2.0-flash"
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
 SYSTEM_PROMPT = """
@@ -33,23 +39,26 @@ BEHAVIOUR:
 - Never claim to control Android or access files unless the required tools exist.
 - Help with coding, learning, planning and problem-solving.
 
-If a message contains [DEVICE BATTERY: ...] data, that is real live data from the phone. Use it to answer the battery level and charging status.\nYour purpose is to make your owner's daily tasks easier.
+If a message contains [DEVICE BATTERY: ...] data, that is real live data from the phone. Use it to answer the battery level and charging status.
+Your purpose is to make your owner's daily tasks easier.
 """
 
-with open("owner.json", "r", encoding="utf-8") as f:
-    OWNER = json.load(f)
-
-SYSTEM_PROMPT = SYSTEM_PROMPT + f"""
+try:
+    with open("owner.json", "r", encoding="utf-8") as f:
+        OWNER = json.load(f)
+    SYSTEM_PROMPT = SYSTEM_PROMPT + f"""
 
 OWNER PROFILE:
-- Owner name: {OWNER["owner_name"]}
-- Your name: {OWNER["assistant_name"]}
-- Preferred language: {OWNER["preferred_language"]}
-- Your role: {OWNER["role"]}
+- Owner name: {OWNER.get("owner_name", "Owner")}
+- Your name: {OWNER.get("assistant_name", "JARVIS")}
+- Preferred language: {OWNER.get("preferred_language", "Hinglish")}
+- Your role: {OWNER.get("role", "Personal Assistant")}
 
 Always address the owner using their saved name.
 Never claim that you know personal information unless it is in the profile or conversation.
 """
+except Exception:
+    OWNER = {"owner_name": "Owner"}
 
 MEMORY_FILE = "jarvis_memory.json"
 engine = ActionEngine()
@@ -63,10 +72,9 @@ except (FileNotFoundError, json.JSONDecodeError):
     history = []
 
 print(f"JARVIS Memory: {len(history)} previous messages loaded.")
-
 print("\n🤖 JARVIS-ONE ONLINE")
 print("Namaste! Main JARVIS hoon.")
-print("Ab Gemini AI se baat kar sakte ho.")
+print("Commands: research: <niche> | script: <topic> | strategy: <niche> | pipeline: <niche>")
 print("Band karne ke liye bye likho.\n")
 
 def format_result(plan, result):
@@ -83,6 +91,85 @@ def format_result(plan, result):
         return "Notification bhej diya."
     return "Ho gaya."
 
+def handle_agent_command(user_input: str) -> bool:
+    if orchestrator is None:
+        return False
+
+    low = user_input.lower().strip()
+
+    if low.startswith("research:"):
+        niche = user_input[9:].strip() or "general Hinglish"
+        print("JARVIS: Research kar raha hoon...")
+        result = orchestrator.run("research", niche, {"niche": niche})
+        if result.get("success"):
+            ideas = result.get("output", [])
+            print("\n📌 Research Ideas:")
+            for i, idea in enumerate(ideas[:8], 1):
+                if isinstance(idea, dict):
+                    print(f"{i}. {idea.get('title_idea', idea)}")
+                    print(f"   Angle: {idea.get('angle', '')}")
+                else:
+                    print(f"{i}. {idea}")
+            print()
+        else:
+            print("JARVIS: Research fail →", result.get("error"))
+        return True
+
+    if low.startswith("script:"):
+        topic = user_input[7:].strip()
+        if not topic:
+            print("JARVIS: Topic batao. Example → script: How to focus better")
+            return True
+        print("JARVIS: Script bana raha hoon...")
+        result = orchestrator.run("script", topic, {"topic": topic})
+        if result.get("success"):
+            out = result.get("output", {})
+            if isinstance(out, dict) and "title" in out:
+                print("\n🎬 Script Package")
+                print("Title:", out.get("title"))
+                print("Hook:", out.get("hook"))
+                print("\nScript:\n", out.get("script", "")[:1200], "...\n" if len(out.get("script", "")) > 1200 else "\n")
+                print("Tags:", ", ".join(out.get("tags", [])[:8]))
+            else:
+                print(out)
+        else:
+            print("JARVIS: Script fail →", result.get("error"))
+        return True
+
+    if low.startswith("strategy:"):
+        niche = user_input[9:].strip() or "general"
+        print("JARVIS: Weekly strategy bana raha hoon...")
+        result = orchestrator.run("strategy", niche, {"niche": niche})
+        if result.get("success"):
+            plan = result.get("output", {})
+            print("\n📅 Weekly Strategy")
+            print("Focus:", plan.get("week_focus", ""))
+            for v in plan.get("videos", []):
+                print(f"- {v.get('day')}: {v.get('title_idea')} ({v.get('type')})")
+            print()
+        else:
+            print("JARVIS: Strategy fail →", result.get("error"))
+        return True
+
+    if low.startswith("pipeline:"):
+        niche = user_input[9:].strip() or "general"
+        print("JARVIS: Full pipeline (research → script) chala raha hoon...")
+        result = orchestrator.research_then_script(niche)
+        if result.get("success"):
+            idea = result.get("selected_idea", {})
+            script = result.get("script_package", {}).get("output", {})
+            print("\n✅ Pipeline Complete")
+            print("Selected Idea:", idea.get("title_idea") if isinstance(idea, dict) else idea)
+            if isinstance(script, dict):
+                print("Title:", script.get("title"))
+                print("Hook:", script.get("hook"))
+            print()
+        else:
+            print("JARVIS: Pipeline fail →", result.get("error"))
+        return True
+
+    return False
+
 
 while True:
     user_input = input("You (Enter=bolo, ya type karo): ").strip()
@@ -96,6 +183,9 @@ while True:
         break
 
     if not user_input:
+        continue
+
+    if handle_agent_command(user_input):
         continue
 
     plan = engine.plan(user_input)
@@ -192,8 +282,10 @@ while True:
     except urllib.error.HTTPError as e:
         print("\nAPI Error:", e.code)
         print(e.read().decode("utf-8", errors="replace"))
-        history.pop()
+        if history:
+            history.pop()
 
     except Exception as e:
         print("\nError:", str(e))
-        history.pop()
+        if history:
+            history.pop()
