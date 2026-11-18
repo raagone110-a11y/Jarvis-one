@@ -1,4 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">JARVIS Companion</string>
-    <string name="accessibility_description">JARVIS Companion receives basic interface events. It does not read screen text or perform taps.</string>
+    <string name="app_name">JARVIS</string>
+    <string name="splash_title">JARVIS</string>
+    <string name="splash_subtitle">Mor Pankh Edition</string>
 </resources>
