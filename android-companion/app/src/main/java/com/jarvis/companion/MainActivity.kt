@@ -39,7 +39,8 @@ import java.util.Locale
 
 class MainActivity : Activity() {
 
-    private val model = "gemini-2.0-flash"
+    // Fixed: gemini-2.0-flash was shut down. Using current stable fast model.
+    private val model = "gemini-3.5-flash-lite"
     private val history = JSONArray()
     private lateinit var chatText: TextView
     private lateinit var scroll: ScrollView
@@ -160,7 +161,6 @@ class MainActivity : Activity() {
         }
         applyInsets(root)
 
-        // Header
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -193,7 +193,6 @@ class MainActivity : Activity() {
         header.addView(statusText, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(serviceBtn)
 
-        // Chat area
         chatText = TextView(this).apply {
             textSize = 15f
             setTextColor(Color.parseColor("#C9D1D9"))
@@ -205,7 +204,6 @@ class MainActivity : Activity() {
             isFillViewport = true
         }
 
-        // Input row
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -342,6 +340,12 @@ class MainActivity : Activity() {
         statusText.text = "● Thinking..."
         statusText.setTextColor(Color.parseColor("#D29922"))
         val key = getSharedPreferences("jarvis", Context.MODE_PRIVATE).getString("api_key", "") ?: ""
+        if (key.isBlank()) {
+            append("JARVIS", "API key nahi mili. App restart karke key daalo.")
+            statusText.text = "● Ready"
+            statusText.setTextColor(Color.parseColor("#3FB950"))
+            return
+        }
         history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
         Thread {
             try {
@@ -360,8 +364,13 @@ class MainActivity : Activity() {
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
 
                 val code = conn.responseCode
-                if (code !in 200..299) throw RuntimeException("API error $code")
-                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val resp = stream?.bufferedReader()?.use { it.readText() } ?: ""
+
+                if (code !in 200..299) {
+                    val short = if (resp.length > 300) resp.take(300) + "..." else resp
+                    throw RuntimeException("API $code: $short")
+                }
 
                 val parts = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
                     .getJSONObject("content").getJSONArray("parts")
@@ -591,7 +600,6 @@ class MainActivity : Activity() {
         val list = findContacts(name)
         if (list.isEmpty()) return "$name naam ka contact nahi mila."
         if (list.size == 1) return action(list[0].second)
-        // Multiple matches - pick first for now
         return action(list[0].second) + " (${list.size} matches, pehla use kiya)"
     }
 
