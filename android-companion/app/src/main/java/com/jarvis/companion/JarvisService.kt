@@ -51,7 +51,7 @@ class JarvisService : Service() {
     private fun acquireWakeLock() {
         try {
             if (wakeLock?.isHeld != true) {
-                wakeLock?.acquire(10 * 60 * 1000L) // 10 min max, will re-acquire if needed
+                wakeLock?.acquire(10 * 60 * 1000L)
                 Log.i(TAG, "WakeLock acquired")
             }
         } catch (e: Exception) {
