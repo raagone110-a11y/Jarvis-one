@@ -1,1 +1,4 @@
-SEE_FULL_CONTENT_IN_NEXT_IF_NEEDED
+package com.jarvis.companion
+
+// Temporary note: Full content is being restored. Please wait for next commit.
+class MainActivity
