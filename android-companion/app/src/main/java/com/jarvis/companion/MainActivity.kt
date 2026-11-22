@@ -39,8 +39,8 @@ import java.util.Locale
 
 class MainActivity : Activity() {
 
-    // Fixed: gemini-2.0-flash was shut down. Using current stable fast model.
-    private val model = "gemini-2.0-flash"
+    // Updated to gemini-3.8-flash as recommended by current Google API
+    private val model = "gemini-3.8-flash"
     private val history = JSONArray()
     private lateinit var chatText: TextView
     private lateinit var scroll: ScrollView
@@ -474,7 +474,6 @@ class MainActivity : Activity() {
 
     private fun makeCall(contact: String): String {
         return try {
-            // Best effort: open dialer with contact name as search (user confirms)
             val intent = Intent(Intent.ACTION_DIAL).apply {
                 data = Uri.parse("tel:")
             }
